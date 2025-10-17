@@ -1,0 +1,532 @@
+// ====================================================================================
+// VERISAGE ANALYTICS - SCALABLE DATABASE SCHEMA
+// ====================================================================================
+// This schema is designed for production-grade analytics platform with:
+// - Proper normalization and relationships
+// - Comprehensive indexing for performance
+// - Audit trails and event logging
+// - Future-proof structure for scaling
+// ====================================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ====================================================================================
+// AUTHENTICATION & USER MANAGEMENT
+// ====================================================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String    // Hashed password
+  name         String?
+  role         String    @default("user") // admin, user, analyst
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  apiKeys      ApiKey[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String    // Friendly name for the key
+  keyHash     String    @unique // Hashed API key
+  prefix      String    // First 8 chars for identification
+  permissions Json?     // Array of permissions
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([keyHash])
+  @@index([isActive])
+  @@map("api_keys")
+}
+
+// ====================================================================================
+// STRIPE CORE MODELS
+// ====================================================================================
+
+model Customer {
+  id                     String                  @id @default(cuid())
+  stripeCustomerId       String                  @unique
+  email                  String?
+  name                   String?
+  phone                  String?
+  address                Json?                   // Full address object
+  balance                Int                     @default(0) // Account balance
+  currency               String                  @default("usd")
+  delinquent             Boolean                 @default(false)
+  metadata               Json?
+  stripeCreatedAt        DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  
+  // Relations
+  subscriptions          Subscription[]
+  invoices               Invoice[]
+  payments               Payment[]
+  refunds                Refund[]
+  subscriptionChanges    SubscriptionChange[]
+  notes                  CustomerNote[]
+  tags                   CustomerTag[]
+
+  @@index([stripeCustomerId])
+  @@index([email])
+  @@index([delinquent])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  note       String   @db.Text
+  createdBy  String?  // User ID who created the note
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("customer_notes")
+}
+
+model CustomerTag {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag        String   // e.g., "vip", "high-value", "at-risk"
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, tag])
+  @@index([customerId])
+  @@index([tag])
+  @@map("customer_tags")
+}
+
+model Product {
+  id                String    @id @default(cuid())
+  stripeProductId   String    @unique
+  name              String
+  description       String?   @db.Text
+  isActive          Boolean   @default(true)
+  metadata          Json?
+  images            Json?     // Array of image URLs
+  stripeCreatedAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  prices            Price[]
+
+  @@index([stripeProductId])
+  @@index([isActive])
+  @@index([name])
+  @@map("products")
+}
+
+model Price {
+  id                String    @id @default(cuid())
+  stripePriceId     String    @unique
+  stripeProductId   String
+  product           Product   @relation(fields: [stripeProductId], references: [stripeProductId], onDelete: Cascade)
+  nickname          String?
+  currency          String    @default("usd")
+  unitAmount        Int?      // Amount in cents (null for tiered/custom)
+  recurringInterval String?   // day, week, month, year
+  recurringIntervalCount Int? @default(1)
+  type              String    // one_time, recurring
+  billingScheme     String    // per_unit, tiered
+  tiersMode         String?   // graduated, volume
+  tiers             Json?     // Pricing tiers for graduated/volume
+  trialPeriodDays   Int?
+  isActive          Boolean   @default(true)
+  metadata          Json?
+  stripeCreatedAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  subscriptionItems SubscriptionItem[]
+
+  @@index([stripePriceId])
+  @@index([stripeProductId])
+  @@index([recurringInterval])
+  @@index([isActive])
+  @@map("prices")
+}
+
+model Subscription {
+  id                    String              @id @default(cuid())
+  stripeSubscriptionId  String              @unique
+  stripeCustomerId      String
+  customer              Customer            @relation(fields: [stripeCustomerId], references: [stripeCustomerId], onDelete: Cascade)
+  status                String              // active, canceled, incomplete, incomplete_expired, trialing, past_due, unpaid, paused
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  canceledAt            DateTime?
+  cancelAtPeriodEnd     Boolean             @default(false)
+  cancelAt              DateTime?
+  endedAt               DateTime?
+  trialStart            DateTime?
+  trialEnd              DateTime?
+  billingCycleAnchor    DateTime?
+  collectionMethod      String              @default("charge_automatically") // charge_automatically, send_invoice
+  daysUntilDue          Int?
+  defaultPaymentMethod  String?
+  discount              Json?               // Applied discount/coupon
+  metadata              Json?
+  stripeCreatedAt       DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  items                 SubscriptionItem[]
+  invoices              Invoice[]
+  changes               SubscriptionChange[]
+
+  @@index([stripeSubscriptionId])
+  @@index([stripeCustomerId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@index([createdAt])
+  @@map("subscriptions")
+}
+
+model SubscriptionItem {
+  id                    String       @id @default(cuid())
+  stripeItemId          String       @unique
+  stripeSubscriptionId  String
+  subscription          Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
+  stripePriceId         String
+  price                 Price        @relation(fields: [stripePriceId], references: [stripePriceId])
+  quantity              Int          @default(1)
+  metadata              Json?
+  stripeCreatedAt       DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([stripeItemId])
+  @@index([stripeSubscriptionId])
+  @@index([stripePriceId])
+  @@map("subscription_items")
+}
+
+model Invoice {
+  id                    String    @id @default(cuid())
+  stripeInvoiceId       String    @unique
+  stripeCustomerId      String
+  customer              Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  stripeSubscriptionId  String?
+  subscription          Subscription? @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId])
+  number                String?   // Invoice number
+  status                String    // draft, open, paid, uncollectible, void
+  amountDue             Int       // Amount in cents
+  amountPaid            Int       // Amount in cents
+  amountRemaining       Int       // Amount in cents
+  subtotal              Int       // Amount in cents
+  total                 Int       // Amount in cents
+  tax                   Int?      // Tax amount in cents
+  currency              String
+  description           String?   @db.Text
+  hostedInvoiceUrl      String?   @db.Text
+  invoicePdf            String?   @db.Text
+  dueDate               DateTime?
+  paidAt                DateTime?
+  periodStart           DateTime?
+  periodEnd             DateTime?
+  attemptCount          Int       @default(0)
+  attempted             Boolean   @default(false)
+  autoAdvance           Boolean   @default(true)
+  billingReason         String?   // subscription_create, subscription_cycle, subscription_update, manual
+  metadata              Json?
+  stripeCreatedAt       DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relations
+  payments              Payment[]
+  refunds               Refund[]
+
+  @@index([stripeInvoiceId])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+  @@index([paidAt])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+model Payment {
+  id                    String    @id @default(cuid())
+  stripePaymentIntentId String    @unique
+  stripeInvoiceId       String?
+  invoice               Invoice?  @relation(fields: [stripeInvoiceId], references: [stripeInvoiceId])
+  stripeCustomerId      String
+  customer              Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  amount                Int       // Amount in cents
+  amountCapturable      Int       @default(0)
+  amountReceived        Int       @default(0)
+  currency              String
+  status                String    // requires_payment_method, requires_confirmation, requires_action, processing, requires_capture, canceled, succeeded
+  paymentMethod         String?   // card, bank_transfer, etc
+  paymentMethodBrand    String?   // visa, mastercard, amex
+  paymentMethodLast4    String?   // Last 4 digits
+  description           String?   @db.Text
+  receiptEmail          String?
+  receiptUrl            String?   @db.Text
+  failureCode           String?
+  failureMessage        String?   @db.Text
+  metadata              Json?
+  paidAt                DateTime?
+  stripeCreatedAt       DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relations
+  refunds               Refund[]
+
+  @@index([stripePaymentIntentId])
+  @@index([stripeInvoiceId])
+  @@index([stripeCustomerId])
+  @@index([status])
+  @@index([paymentMethod])
+  @@index([paidAt])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Refund {
+  id                  String    @id @default(cuid())
+  stripeRefundId      String    @unique
+  stripePaymentIntentId String?
+  payment             Payment?  @relation(fields: [stripePaymentIntentId], references: [stripePaymentIntentId])
+  stripeInvoiceId     String?
+  invoice             Invoice?  @relation(fields: [stripeInvoiceId], references: [stripeInvoiceId])
+  stripeCustomerId    String
+  customer            Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  amount              Int       // Refund amount in cents
+  currency            String
+  reason              String?   // duplicate, fraudulent, requested_by_customer
+  status              String    // succeeded, failed, pending, canceled
+  failureReason       String?
+  receiptNumber       String?
+  metadata            Json?
+  refundedAt          DateTime?
+  stripeCreatedAt     DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([stripeRefundId])
+  @@index([stripeCustomerId])
+  @@index([stripePaymentIntentId])
+  @@index([status])
+  @@index([refundedAt])
+  @@index([createdAt])
+  @@map("refunds")
+}
+
+model SubscriptionChange {
+  id                    String       @id @default(cuid())
+  stripeSubscriptionId  String
+  subscription          Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
+  stripeCustomerId      String
+  customer              Customer     @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  changeType            String       // created, updated, canceled, plan_changed, quantity_changed, trial_ended, reactivated
+  fromStatus            String?
+  toStatus              String?
+  fromPriceId           String?
+  toPriceId             String?
+  fromQuantity          Int?
+  toQuantity            Int?
+  fromAmount            Int?         // in cents
+  toAmount              Int?         // in cents
+  reason                String?      @db.Text
+  eventId               String?      // Reference to WebhookEvent
+  effectiveDate         DateTime
+  metadata              Json?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([stripeSubscriptionId])
+  @@index([stripeCustomerId])
+  @@index([changeType])
+  @@index([effectiveDate])
+  @@index([createdAt])
+  @@map("subscription_changes")
+}
+
+// ====================================================================================
+// ANALYTICS & AGGREGATION MODELS
+// ====================================================================================
+
+model RevenueSnapshot {
+  id                  String   @id @default(cuid())
+  date                DateTime @unique
+  period              String   // daily, weekly, monthly, yearly
+  totalRevenue        Int      @default(0) // in cents
+  totalRefunds        Int      @default(0) // in cents
+  netRevenue          Int      @default(0) // in cents
+  mrr                 Int      @default(0) // Monthly Recurring Revenue
+  arr                 Int      @default(0) // Annual Recurring Revenue
+  newCustomers        Int      @default(0)
+  churnedCustomers    Int      @default(0)
+  activeSubscriptions Int      @default(0)
+  trialingSubscriptions Int    @default(0)
+  newSubscriptions    Int      @default(0)
+  canceledSubscriptions Int    @default(0)
+  successfulPayments  Int      @default(0)
+  failedPayments      Int      @default(0)
+  refundCount         Int      @default(0)
+  currency            String   @default("usd")
+  metadata            Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([date])
+  @@index([period])
+  @@index([createdAt])
+  @@map("revenue_snapshots")
+}
+
+// ====================================================================================
+// GOOGLE ANALYTICS 4 MODELS
+// ====================================================================================
+
+model GA4Metric {
+  id                 String   @id @default(cuid())
+  date               DateTime
+  country            String
+  deviceCategory     String
+  city               String?
+  browser            String?
+  operatingSystem    String?
+  trafficSource      String?
+  activeUsers        Int      @default(0)
+  newUsers           Int      @default(0)
+  sessions           Int      @default(0)
+  engagedSessions    Int      @default(0)
+  engagementRate     Float    @default(0)
+  eventCount         Int      @default(0)
+  conversions        Int      @default(0)
+  pageViews          Int      @default(0)
+  avgSessionDuration Float    @default(0)
+  bounceRate         Float    @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([date, country, deviceCategory, city, browser, operatingSystem, trafficSource])
+  @@index([date])
+  @@index([country])
+  @@index([deviceCategory])
+  @@index([createdAt])
+  @@map("ga4_metrics")
+}
+
+// ====================================================================================
+// SYSTEM & OPERATIONAL MODELS
+// ====================================================================================
+
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  source          String   // stripe, paddle, etc
+  eventType       String   // customer.created, invoice.paid, etc
+  eventId         String?  // External event ID
+  payload         Json     // Full webhook payload
+  status          String   // received, processing, processed, failed
+  processedAt     DateTime?
+  error           String?  @db.Text
+  retryCount      Int      @default(0)
+  headers         Json?    // Request headers
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([source, eventId])
+  @@index([source])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+model SyncLog {
+  id            String   @id @default(cuid())
+  syncType      String   @unique // stripe_customers, stripe_products, stripe_invoices, ga4_metrics
+  lastSyncAt    DateTime
+  nextSyncAt    DateTime?
+  status        String   // success, failed, in_progress
+  recordsSynced Int      @default(0)
+  recordsFailed Int      @default(0)
+  errorMessage  String?  @db.Text
+  duration      Int?     // Sync duration in milliseconds
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([syncType])
+  @@index([status])
+  @@index([lastSyncAt])
+  @@map("sync_logs")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // login, logout, create, update, delete, export
+  resource    String   // user, customer, subscription, invoice, etc
+  resourceId  String?
+  changes     Json?    // Before/after values
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  status      String   @default("success") // success, failure
+  errorMessage String? @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  type        String   // email, webhook, sms
+  recipient   String   // Email, URL, phone number
+  subject     String?
+  message     String   @db.Text
+  status      String   @default("pending") // pending, sent, failed
+  sentAt      DateTime?
+  error       String?  @db.Text
+  retryCount  Int      @default(0)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([recipient])
+  @@index([createdAt])
+  @@map("notifications")
+}
