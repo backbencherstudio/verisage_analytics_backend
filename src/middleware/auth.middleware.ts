@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../services/auth.service';
 
-// Extend Express Request type to include user
 declare global {
   namespace Express {
     interface Request {
@@ -34,12 +33,10 @@ export const authMiddleware = async (
       });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const token = authHeader.substring(7); 
 
-    // Verify token and get user
     const user = await verifyToken(token);
 
-    // Attach user to request object
     req.user = user;
 
     next();

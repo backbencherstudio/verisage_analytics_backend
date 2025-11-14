@@ -1,9 +1,5 @@
 import { prisma } from '../../db/prisma';
 
-/**
- * Payment Analytics Service
- * Provides comprehensive payment transaction analytics
- */
 
 export interface PaymentAnalytics {
   totalPayments: number;

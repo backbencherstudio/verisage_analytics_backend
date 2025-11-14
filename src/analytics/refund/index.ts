@@ -1,14 +1,9 @@
 import { prisma } from '../../db/prisma';
 
-/**
- * Refund Analytics Service
- * Provides comprehensive refund analytics
- */
-
 export interface RefundAnalytics {
   totalRefunds: number;
   totalRefundAmount: number;
-  refundRate: number; // Percentage of payments refunded
+  refundRate: number; 
   averageRefundAmount: number;
   refundsByReason: Array<{
     reason: string;
@@ -166,7 +161,7 @@ export async function getRefundAnalytics(
       };
     })
     .sort((a, b) => b.refundAmount - a.refundAmount)
-    .slice(0, 10); // Top 10
+    .slice(0, 10); 
 
   // Refunds by status
   const statusMap = new Map<string, { count: number; amount: number }>();

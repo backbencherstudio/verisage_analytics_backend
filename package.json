@@ -13,7 +13,10 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "ts-node prisma/seed.ts",
-    "ga4:pull": "ts-node src/jobs/ga4.cron.ts"
+    "ga4:pull": "ts-node src/jobs/ga4.cron.ts",
+    "worker": "ts-node src/jobs/clientWebhook.worker.ts",
+    "worker:prod": "node dist/jobs/clientWebhook.worker.js"
+    ,"load:test": "node ./scripts/load-test-webhook.js"
   },
   "keywords": [
     "stripe",
@@ -24,8 +27,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google-analytics/data": "^4.0.0",
+  "@google-analytics/data": "^4.0.0",
     "@prisma/client": "^5.20.0",
+    "bullmq": "^1.79.0",
+    "ioredis": "^5.3.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -44,6 +49,7 @@
     "@types/node-cron": "^3.0.11",
     "nodemon": "^3.1.7",
     "prisma": "^5.20.0",
+  "ts-node-dev": "^2.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2"
   }

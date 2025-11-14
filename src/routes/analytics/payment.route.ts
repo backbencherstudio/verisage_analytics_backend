@@ -3,10 +3,6 @@ import { getPaymentAnalytics } from '../../analytics/payment';
 
 const router = Router();
 
-/**
- * GET /api/analytics/payment
- * Get payment analytics
- */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query;

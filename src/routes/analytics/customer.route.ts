@@ -3,7 +3,6 @@ import { getCustomerAnalytics } from "../../analytics/customer";
 
 const router = Router();
 
-// GET /api/analytics/customer - Get customer analytics with optional date range
 router.get("/", async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query;
@@ -36,7 +35,7 @@ router.get("/", async (req: Request, res: Response) => {
       metadata: {
         dateRange: dateRange
           ? dateRange
-          : null, // null means all-time
+          : null, 
       },
     });
   } catch (error: any) {

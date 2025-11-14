@@ -3,10 +3,8 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../db/prisma";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-this";
-const JWT_EXPIRY = process.env.JWT_EXPIRY || "7d"; // 7 days default
+const JWT_EXPIRY = process.env.JWT_EXPIRY || "7d"; 
 
-
-// Force type assertions for JWT
 const jwtSecret = JWT_SECRET as jwt.Secret;
 const jwtExpiry = JWT_EXPIRY as string;
 
@@ -66,9 +64,7 @@ export const login = async (input: LoginInput): Promise<AuthResponse> => {
   };
 };
 
-/**
- * Verify JWT token and return user data
- */
+
 export const verifyToken = async (token: string) => {
   try {
     const decoded = jwt.verify(token, jwtSecret) as {
@@ -77,7 +73,6 @@ export const verifyToken = async (token: string) => {
       role?: string;
     };
 
-    // Look up user in DB
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {

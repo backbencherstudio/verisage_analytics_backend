@@ -1,13 +1,10 @@
-// Revenue Analytics Service
-// Provides: MRR, ARR, revenue by plan, revenue by subscription type, growth rate, ARPU, net revenue, revenue by currency, upcoming revenue
-
 import { prisma } from '../../db/prisma';
 
 interface RevenueAnalytics {
-  mrr: number; // Monthly Recurring Revenue
-  arr: number; // Annual Recurring Revenue
+  mrr: number; 
+  arr: number; 
   totalRevenue: number;
-  netRevenue: number; // After refunds
+  netRevenue: number; 
   averageRevenuePerUser: number;
   revenueGrowth: {
     monthOverMonth: string;
@@ -27,7 +24,7 @@ interface RevenueAnalytics {
     currency: string;
     revenue: number;
   }>;
-  upcomingRevenue: number; // From active subscriptions next billing cycle
+  upcomingRevenue: number; 
 }
 
 export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date }): Promise<RevenueAnalytics> {
@@ -56,8 +53,7 @@ export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date
   // Calculate total revenue
   const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0) / 100;
 
-  // Get refunds (if you track them separately, for now we'll use negative amounts or a refund status)
-  // Assuming refunds might be tracked in payments with negative amounts or specific status
+
   const refunds = await prisma.payment.findMany({
     where: {
       status: 'refunded',
@@ -83,9 +79,6 @@ export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date
     }
   });
 
-  // Calculate MRR by getting monthly payment amounts
-  // Note: In a real scenario, you'd get this from Stripe's subscription.items.price.recurring.interval
-  // For now, we'll estimate from recent payments
   let mrr = 0;
   const subscriptionRevenue = new Map<string, number>();
   
@@ -97,14 +90,13 @@ export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date
     }
   }
 
-  // Estimate MRR (this is a simplified calculation)
-  // In production, you'd want to fetch actual subscription intervals from Stripe
+
   const avgMonthlyRevenue = payments.length > 0 
     ? (payments.reduce((sum, p) => sum + p.amount, 0) / payments.length) / 100
     : 0;
   mrr = avgMonthlyRevenue * activeSubscriptions.length;
 
-  // ARR = MRR * 12
+
   const arr = mrr * 12;
 
   // Revenue by currency
@@ -173,10 +165,8 @@ export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date
     percentage: totalPlanRevenue > 0 ? (amount / totalPlanRevenue) * 100 : 0
   }));
 
-  // Revenue by subscription type (monthly vs yearly)
-  // This would typically come from Stripe subscription interval data
-  // For now, we'll use a simplified approach based on payment amounts
-  const monthlyThreshold = 50; // Payments under $50 likely monthly
+
+  const monthlyThreshold = 50; 
   const revenueBySubscriptionType = {
     monthly: payments.filter(p => (p.amount / 100) < monthlyThreshold).reduce((sum, p) => sum + p.amount, 0) / 100,
     yearly: payments.filter(p => (p.amount / 100) >= monthlyThreshold).reduce((sum, p) => sum + p.amount, 0) / 100,
@@ -243,7 +233,7 @@ export async function getRevenueAnalytics(dateRange?: { start?: Date; end?: Date
   }
 
   // Upcoming revenue (from active subscriptions - estimated next month)
-  const upcomingRevenue = mrr; // Next month's expected MRR
+  const upcomingRevenue = mrr; 
 
   return {
     mrr: parseFloat(mrr.toFixed(2)),

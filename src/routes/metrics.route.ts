@@ -20,7 +20,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Apply auth middleware to all routes in this router
 router.use(authMiddleware);
 
 // Get Stripe subscription metrics

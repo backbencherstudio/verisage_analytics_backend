@@ -1,6 +1,3 @@
-// Customer Analytics Service
-// Provides: total customers, new customers, churn rate, CLV, CAC, active/inactive, by country, multi-subscribers
-
 import { prisma } from '../../db/prisma';
 
 
