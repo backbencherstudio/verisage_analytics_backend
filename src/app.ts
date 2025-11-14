@@ -6,15 +6,22 @@ import { config } from './config/env';
 
 const app: Application = express();
 
-// Stripe webhook raw body must be parsed before JSON middleware
-app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+// Stripe webhook raw body parse (required for signature verification)
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json', limit: '1mb' }));
+
+// Use a larger, configurable limit to avoid "request entity too large" errors for large payloads
+const clientWebhookLimit = (config.clientWebhook && (config.clientWebhook as any).maxBody) || '10mb';
+app.use('/api/webhooks/client', express.raw({ type: 'application/json', limit: clientWebhookLimit }));
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(helmet());
-app.use(cors({ origin: config.corsOrigin, credentials: true }));
+const corsOrigin = Array.isArray(config.corsOrigin)
+  ? config.corsOrigin.filter((o): o is string => typeof o === 'string')
+  : config.corsOrigin;
+app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

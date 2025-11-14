@@ -4,7 +4,6 @@ import Stripe from 'stripe';
 declare module 'stripe' {
   namespace Stripe {
     interface SubscriptionMetadata {
-      // Add custom metadata fields here
       customField?: string;
     }
   }
@@ -17,8 +16,8 @@ export interface SubscriptionMetrics {
   canceledSubscriptions: number;
   trialSubscriptions: number;
   revenue: {
-    mrr: number; // Monthly Recurring Revenue
-    arr: number; // Annual Recurring Revenue
+    mrr: number; 
+    arr: number; 
     total: number;
   };
 }

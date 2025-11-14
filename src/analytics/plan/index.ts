@@ -1,9 +1,5 @@
 import { prisma } from '../../db/prisma';
 
-/**
- * Plan/Product Analytics Service
- * Provides comprehensive plan and product performance analytics
- */
 
 export interface PlanAnalytics {
   totalPlans: number;
@@ -50,7 +46,6 @@ export async function getPlanAnalytics(
   startDate?: Date,
   endDate?: Date
 ): Promise<PlanAnalytics> {
-  // Get all prices (plans) with their products
   const allPrices = await prisma.price.findMany({
     include: {
       product: true,

@@ -7,6 +7,14 @@ const stripe = new Stripe(config.stripe.secretKey, {
   apiVersion: '2024-06-20',
 });
 
+// Helper: normalize Stripe expandable fields to plain IDs
+const asId = (val: any): string | undefined => {
+  if (!val) return undefined;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && typeof val.id === 'string') return val.id;
+  return undefined;
+};
+
 /**
  * Handle incoming Stripe webhook events
  */
@@ -14,6 +22,12 @@ export const handleStripeWebhook = async (event: Stripe.Event) => {
   console.log(`Processing Stripe event: ${event.type}`);
 
   switch (event.type) {
+    case 'customer.created':
+      await handleCustomerUpsert(event.data.object as Stripe.Customer);
+      break;
+    case 'customer.updated':
+      await handleCustomerUpsert(event.data.object as Stripe.Customer);
+      break;
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
       await handleSubscriptionChange(event.data.object as Stripe.Subscription);
@@ -31,6 +45,19 @@ export const handleStripeWebhook = async (event: Stripe.Event) => {
       await handlePaymentFailed(event.data.object as Stripe.Invoice);
       break;
 
+    case 'payment_intent.created':
+    case 'payment_intent.succeeded':
+    case 'payment_intent.payment_failed':
+    case 'payment_intent.canceled':
+    case 'payment_intent.requires_action':
+      await handlePaymentIntent(event.data.object as Stripe.PaymentIntent);
+      break;
+
+    case 'payout.paid':
+    case 'payout.failed':
+      await recordWebhookEvent(event);
+      break;
+
     default:
       console.log(`Unhandled event type: ${event.type}`);
   }
@@ -41,6 +68,9 @@ export const handleStripeWebhook = async (event: Stripe.Event) => {
  */
 const handleSubscriptionChange = async (subscription: Stripe.Subscription) => {
   const normalized = normalizeStripeEvent(subscription);
+
+  const customerId = asId(subscription.customer);
+  await ensureCustomerExists(customerId);
 
   await prisma.subscription.upsert({
     where: { stripeSubscriptionId: subscription.id },
@@ -56,7 +86,7 @@ const handleSubscriptionChange = async (subscription: Stripe.Subscription) => {
     },
     create: {
       stripeSubscriptionId: subscription.id,
-      stripeCustomerId: subscription.customer as string,
+      stripeCustomerId: customerId!,
       status: subscription.status,
       currentPeriodStart: new Date(subscription.current_period_start * 1000),
       currentPeriodEnd: new Date(subscription.current_period_end * 1000),
@@ -83,15 +113,46 @@ const handleSubscriptionDeleted = async (subscription: Stripe.Subscription) => {
 };
 
 /**
+ * Handle customer create/update
+ */
+const handleCustomerUpsert = async (customer: Stripe.Customer) => {
+  await prisma.customer.upsert({
+    where: { stripeCustomerId: customer.id },
+    update: {
+      email: typeof customer.email === 'string' ? customer.email : null,
+      name: typeof customer.name === 'string' ? customer.name : null,
+      phone: typeof customer.phone === 'string' ? customer.phone : null,
+      metadata: (customer.metadata || {}) as any,
+      address: (customer.address || undefined) as any,
+      delinquent: (customer as any).delinquent ?? false,
+      stripeCreatedAt: customer.created ? new Date(customer.created * 1000) : undefined,
+    },
+    create: {
+      stripeCustomerId: customer.id,
+      email: typeof customer.email === 'string' ? customer.email : null,
+      name: typeof customer.name === 'string' ? customer.name : null,
+      phone: typeof customer.phone === 'string' ? customer.phone : null,
+      metadata: (customer.metadata || {}) as any,
+      address: (customer.address || undefined) as any,
+      delinquent: (customer as any).delinquent ?? false,
+      stripeCreatedAt: customer.created ? new Date(customer.created * 1000) : undefined,
+    },
+  });
+};
+
+/**
  * Handle successful payment
  */
 const handlePaymentSucceeded = async (invoice: Stripe.Invoice) => {
-  // First, create or update the invoice record
+  const customerId = asId(invoice.customer);
+  if (customerId) {
+    await ensureCustomerExists(customerId);
+  }
   await prisma.invoice.upsert({
     where: { stripeInvoiceId: invoice.id },
     update: {
-      stripeCustomerId: invoice.customer as string,
-      stripeSubscriptionId: invoice.subscription as string | null,
+      stripeCustomerId: customerId!,
+      stripeSubscriptionId: asId(invoice.subscription) || null,
       number: invoice.number || null,
       status: invoice.status || 'draft',
       amountDue: invoice.amount_due,
@@ -107,8 +168,8 @@ const handlePaymentSucceeded = async (invoice: Stripe.Invoice) => {
     },
     create: {
       stripeInvoiceId: invoice.id,
-      stripeCustomerId: invoice.customer as string,
-      stripeSubscriptionId: invoice.subscription as string | null,
+      stripeCustomerId: customerId!,
+      stripeSubscriptionId: asId(invoice.subscription) || null,
       number: invoice.number || null,
       status: invoice.status || 'draft',
       amountDue: invoice.amount_due,
@@ -127,9 +188,9 @@ const handlePaymentSucceeded = async (invoice: Stripe.Invoice) => {
   // Then, create the payment record if there's a payment intent
   if (invoice.payment_intent) {
     await prisma.payment.upsert({
-      where: { stripePaymentIntentId: invoice.payment_intent as string },
+      where: { stripePaymentIntentId: asId(invoice.payment_intent)! },
       update: {
-        stripeCustomerId: invoice.customer as string,
+        stripeCustomerId: customerId!,
         stripeInvoiceId: invoice.id,
         amount: invoice.amount_paid,
         currency: invoice.currency,
@@ -138,8 +199,8 @@ const handlePaymentSucceeded = async (invoice: Stripe.Invoice) => {
         metadata: invoice as any,
       },
       create: {
-        stripePaymentIntentId: invoice.payment_intent as string,
-        stripeCustomerId: invoice.customer as string,
+        stripePaymentIntentId: asId(invoice.payment_intent)!,
+        stripeCustomerId: customerId!,
         stripeInvoiceId: invoice.id,
         amount: invoice.amount_paid,
         currency: invoice.currency,
@@ -155,12 +216,15 @@ const handlePaymentSucceeded = async (invoice: Stripe.Invoice) => {
  * Handle failed payment
  */
 const handlePaymentFailed = async (invoice: Stripe.Invoice) => {
-  // First, create or update the invoice record
+  const customerId = asId(invoice.customer);
+  if (customerId) {
+    await ensureCustomerExists(customerId);
+  }
   await prisma.invoice.upsert({
     where: { stripeInvoiceId: invoice.id },
     update: {
-      stripeCustomerId: invoice.customer as string,
-      stripeSubscriptionId: invoice.subscription as string | null,
+      stripeCustomerId: customerId!,
+      stripeSubscriptionId: asId(invoice.subscription) || null,
       number: invoice.number || null,
       status: invoice.status || 'open',
       amountDue: invoice.amount_due,
@@ -175,8 +239,8 @@ const handlePaymentFailed = async (invoice: Stripe.Invoice) => {
     },
     create: {
       stripeInvoiceId: invoice.id,
-      stripeCustomerId: invoice.customer as string,
-      stripeSubscriptionId: invoice.subscription as string | null,
+      stripeCustomerId: customerId!,
+      stripeSubscriptionId: asId(invoice.subscription) || null,
       number: invoice.number || null,
       status: invoice.status || 'open',
       amountDue: invoice.amount_due,
@@ -195,8 +259,8 @@ const handlePaymentFailed = async (invoice: Stripe.Invoice) => {
   if (invoice.payment_intent) {
     await prisma.payment.create({
       data: {
-        stripePaymentIntentId: invoice.payment_intent as string,
-        stripeCustomerId: invoice.customer as string,
+        stripePaymentIntentId: asId(invoice.payment_intent)!,
+        stripeCustomerId: customerId!,
         stripeInvoiceId: invoice.id,
         amount: invoice.amount_due,
         currency: invoice.currency,
@@ -204,6 +268,123 @@ const handlePaymentFailed = async (invoice: Stripe.Invoice) => {
         metadata: invoice as any,
       },
     });
+  }
+};
+
+/**
+ * Handle payment intent lifecycle events
+ */
+const handlePaymentIntent = async (pi: Stripe.PaymentIntent) => {
+  const customerId = asId(pi.customer);
+  if (!customerId) {
+    console.warn('PaymentIntent without customer; skipping DB write for', pi.id);
+    return;
+  }
+
+  await ensureCustomerExists(customerId);
+
+  const paidAt = pi.status === 'succeeded'
+    ? new Date((pi.created || Math.floor(Date.now() / 1000)) * 1000)
+    : null;
+
+  await prisma.payment.upsert({
+    where: { stripePaymentIntentId: pi.id },
+    update: {
+      stripeCustomerId: customerId,
+      amount: (pi.amount_received ?? pi.amount) ?? 0,
+      currency: pi.currency,
+      status: pi.status,
+      paidAt: paidAt,
+      failureCode: (pi.last_payment_error as any)?.code || null,
+      failureMessage: (pi.last_payment_error as any)?.message || null,
+      paymentMethod: typeof pi.payment_method === 'string' ? 'card' : (pi.payment_method as any)?.type || null,
+      metadata: pi as any,
+    },
+    create: {
+      stripePaymentIntentId: pi.id,
+      stripeCustomerId: customerId,
+      stripeInvoiceId: asId(pi.invoice) || null,
+      amount: (pi.amount_received ?? pi.amount) ?? 0,
+      currency: pi.currency,
+      status: pi.status,
+      paidAt: paidAt,
+      failureCode: (pi.last_payment_error as any)?.code || null,
+      failureMessage: (pi.last_payment_error as any)?.message || null,
+      paymentMethod: typeof pi.payment_method === 'string' ? 'card' : (pi.payment_method as any)?.type || null,
+      metadata: pi as any,
+    },
+  });
+};
+
+/** Save unmodeled webhook events for auditing */
+const recordWebhookEvent = async (event: Stripe.Event) => {
+  try {
+    await prisma.webhookEvent.upsert({
+      where: {
+        source_eventId: {
+          source: 'stripe',
+          eventId: event.id || 'unknown',
+        },
+      },
+      update: {
+        eventType: event.type,
+        payload: event as any,
+        status: 'processed',
+        processedAt: new Date(),
+      },
+      create: {
+        source: 'stripe',
+        eventType: event.type,
+        eventId: event.id || 'unknown',
+        payload: event as any,
+        status: 'processed',
+        processedAt: new Date(),
+      },
+    });
+  } catch (e) {
+    console.warn('Failed to record webhook event', e);
+  }
+};
+
+/** Ensure a Customer row exists for a given Stripe customer id */
+const ensureCustomerExists = async (stripeCustomerId?: string) => {
+  if (!stripeCustomerId) return;
+  try {
+    await prisma.customer.upsert({
+      where: { stripeCustomerId },
+      update: {},
+      create: { stripeCustomerId },
+    });
+  } catch (e) {
+    try {
+      const cust = await stripe.customers.retrieve(stripeCustomerId);
+      if (!('deleted' in cust)) {
+        await prisma.customer.upsert({
+          where: { stripeCustomerId },
+          update: {
+            email: typeof cust.email === 'string' ? cust.email : null,
+            name: typeof cust.name === 'string' ? cust.name : null,
+            phone: typeof cust.phone === 'string' ? cust.phone : null,
+            address: (cust.address || undefined) as any,
+            metadata: (cust.metadata || {}) as any,
+            delinquent: (cust as any).delinquent ?? false,
+            stripeCreatedAt: cust.created ? new Date(cust.created * 1000) : undefined,
+          },
+          create: {
+            stripeCustomerId,
+            email: typeof cust.email === 'string' ? cust.email : null,
+            name: typeof cust.name === 'string' ? cust.name : null,
+            phone: typeof cust.phone === 'string' ? cust.phone : null,
+            address: (cust.address || undefined) as any,
+            metadata: (cust.metadata || {}) as any,
+            delinquent: (cust as any).delinquent ?? false,
+            stripeCreatedAt: cust.created ? new Date(cust.created * 1000) : undefined,
+          },
+        });
+      }
+    } catch (fetchErr) {
+      console.warn('ensureCustomerExists: could not enrich customer', stripeCustomerId, fetchErr);
+    }
   }
 };
 
@@ -258,19 +439,11 @@ export const getSubscriptionStats = async () => {
   }));
 };
 
-/**
- * Get live Stripe metrics directly from Stripe API (no database writes)
- * Accepts optional date range filters and aggregates key KPIs.
- */
-/**
- * Get Stripe metrics from DATABASE (fast, cached)
- * This is much faster than hitting Stripe API live
- */
+
 export const getStripeLiveMetrics = async (filter?: {
   startDate?: Date;
   endDate?: Date;
 }) => {
-  // Build filter for database query
   const whereSubscription: any = {};
   const wherePayment: any = {};
 
@@ -287,7 +460,6 @@ export const getStripeLiveMetrics = async (filter?: {
     }
   }
 
-  // Fetch from database in parallel (much faster than Stripe API)
   const [
     allSubscriptions,
     activeSubscriptions,
@@ -313,8 +485,7 @@ export const getStripeLiveMetrics = async (filter?: {
     }),
   ]);
 
-  // Calculate metrics from all payment data
-  // Note: Stripe invoices use 'paid' status, while payment intents use 'succeeded'
+
   const successfulPayments = allPaymentData.filter(p => 
     p.status === 'succeeded' || p.status === 'paid'
   );
@@ -323,8 +494,7 @@ export const getStripeLiveMetrics = async (filter?: {
   );
   const totalRevenueCents = successfulPayments.reduce((sum, p) => sum + p.amount, 0);
 
-  // Calculate MRR from active subscriptions
-  // Get all active subscriptions with metadata to extract pricing info
+
   const activeSubsWithMetadata = await prisma.subscription.findMany({
     where: { 
       ...whereSubscription, 
@@ -333,11 +503,9 @@ export const getStripeLiveMetrics = async (filter?: {
     select: { metadata: true }
   });
 
-  // Try to calculate MRR from subscription metadata
   let mrrCents = 0;
   for (const sub of activeSubsWithMetadata) {
     const metadata = sub.metadata as any;
-    // Try to extract price from metadata
     if (metadata?.items?.data) {
       for (const item of metadata.items.data) {
         const price = item.price;
@@ -382,23 +550,19 @@ export const getStripeLiveMetrics = async (filter?: {
       revenue: totalRevenueCents / 100,
     },
     refunds: {
-      total: 0, // Add refund tracking if needed
+      total: 0, 
       amount: 0,
     },
     note: 'Metrics fetched from database cache. Sync data regularly for accuracy.',
   };
 };
 
-/**
- * Sync only new or updated Stripe customers, subscriptions, and payments to the database
- * Uses incremental sync based on last sync timestamp
- */
+
 export const syncAllStripeDataToDb = async () => {
   const syncType = 'stripe_full';
   let recordsSynced = 0;
 
   try {
-    // Get the last successful sync timestamp
     const lastSync = await prisma.syncLog.findUnique({
       where: { syncType },
     });
@@ -411,7 +575,6 @@ export const syncAllStripeDataToDb = async () => {
       `[Stripe Sync] Starting ${lastSyncTimestamp ? 'incremental' : 'full'} sync...`
     );
 
-    // Mark sync as in progress
     await prisma.syncLog.upsert({
       where: { syncType },
       update: { status: 'in_progress', updatedAt: new Date() },
@@ -423,7 +586,6 @@ export const syncAllStripeDataToDb = async () => {
       },
     });
 
-    // Fetch customers created or updated after last sync
     const customers = await stripe.customers
       .list({
         limit: 100,
@@ -434,7 +596,6 @@ export const syncAllStripeDataToDb = async () => {
     console.log(`[Stripe Sync] Found ${customers.length} customers to sync`);
 
     for (const customer of customers) {
-      // Upsert customer
       await prisma.customer.upsert({
         where: { stripeCustomerId: customer.id },
         update: {
@@ -453,7 +614,6 @@ export const syncAllStripeDataToDb = async () => {
       });
       recordsSynced++;
 
-      // Fetch and upsert subscriptions for this customer (updated after last sync)
       const subscriptions = await stripe.subscriptions
         .list({
           customer: customer.id,
@@ -489,7 +649,6 @@ export const syncAllStripeDataToDb = async () => {
         recordsSynced++;
       }
 
-      // Fetch and upsert invoices for this customer (created after last sync)
       const invoices = await stripe.invoices
         .list({
           customer: customer.id,
@@ -499,7 +658,6 @@ export const syncAllStripeDataToDb = async () => {
         .autoPagingToArray({ limit: 1000 });
 
       for (const inv of invoices) {
-        // First, upsert the invoice
         await prisma.invoice.upsert({
           where: { stripeInvoiceId: inv.id },
           update: {
@@ -541,7 +699,6 @@ export const syncAllStripeDataToDb = async () => {
           },
         });
 
-        // Then, if there's a payment intent, upsert the payment
         if (inv.payment_intent) {
           await prisma.payment.upsert({
             where: { stripePaymentIntentId: inv.payment_intent as string },
@@ -574,7 +731,6 @@ export const syncAllStripeDataToDb = async () => {
       }
     }
 
-    // Mark sync as successful
     await prisma.syncLog.upsert({
       where: { syncType },
       update: {
@@ -593,7 +749,6 @@ export const syncAllStripeDataToDb = async () => {
 
     console.log(`[Stripe Sync] Successfully synced ${recordsSynced} records`);
   } catch (error: any) {
-    // Mark sync as failed
     await prisma.syncLog.upsert({
       where: { syncType },
       update: {

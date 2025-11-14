@@ -22,17 +22,17 @@ datasource db {
 // ====================================================================================
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  password     String    // Hashed password
-  name         String?
-  role         String    @default("user") // admin, user, analyst
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  apiKeys      ApiKey[]
-  auditLogs    AuditLog[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String     @id @default(cuid())
+  email       String     @unique
+  password    String // Hashed password
+  name        String?
+  role        String     @default("user") // admin, user, analyst
+  isActive    Boolean    @default(true)
+  lastLoginAt DateTime?
+  apiKeys     ApiKey[]
+  auditLogs   AuditLog[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@index([email])
   @@index([role])
@@ -44,10 +44,10 @@ model ApiKey {
   id          String    @id @default(cuid())
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String    // Friendly name for the key
-  keyHash     String    @unique // Hashed API key
-  prefix      String    // First 8 chars for identification
-  permissions Json?     // Array of permissions
+  name        String 
+  keyHash     String    @unique 
+  prefix      String 
+  permissions Json? 
   lastUsedAt  DateTime?
   expiresAt   DateTime?
   isActive    Boolean   @default(true)
@@ -65,28 +65,28 @@ model ApiKey {
 // ====================================================================================
 
 model Customer {
-  id                     String                  @id @default(cuid())
-  stripeCustomerId       String                  @unique
-  email                  String?
-  name                   String?
-  phone                  String?
-  address                Json?                   // Full address object
-  balance                Int                     @default(0) // Account balance
-  currency               String                  @default("usd")
-  delinquent             Boolean                 @default(false)
-  metadata               Json?
-  stripeCreatedAt        DateTime?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  
+  id               String    @id @default(cuid())
+  stripeCustomerId String    @unique
+  email            String?
+  name             String?
+  phone            String?
+  address          Json? 
+  balance          Int       @default(0) 
+  currency         String    @default("usd")
+  delinquent       Boolean   @default(false)
+  metadata         Json?
+  stripeCreatedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
   // Relations
-  subscriptions          Subscription[]
-  invoices               Invoice[]
-  payments               Payment[]
-  refunds                Refund[]
-  subscriptionChanges    SubscriptionChange[]
-  notes                  CustomerNote[]
-  tags                   CustomerTag[]
+  subscriptions       Subscription[]
+  invoices            Invoice[]
+  payments            Payment[]
+  refunds             Refund[]
+  subscriptionChanges SubscriptionChange[]
+  notes               CustomerNote[]
+  tags                CustomerTag[]
 
   @@index([stripeCustomerId])
   @@index([email])
@@ -100,7 +100,7 @@ model CustomerNote {
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   note       String   @db.Text
-  createdBy  String?  // User ID who created the note
+  createdBy  String? 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -113,7 +113,7 @@ model CustomerTag {
   id         String   @id @default(cuid())
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  tag        String   // e.g., "vip", "high-value", "at-risk"
+  tag        String // e.g., "vip", "high-value", "at-risk"
   createdAt  DateTime @default(now())
 
   @@unique([customerId, tag])
@@ -123,19 +123,19 @@ model CustomerTag {
 }
 
 model Product {
-  id                String    @id @default(cuid())
-  stripeProductId   String    @unique
-  name              String
-  description       String?   @db.Text
-  isActive          Boolean   @default(true)
-  metadata          Json?
-  images            Json?     // Array of image URLs
-  stripeCreatedAt   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  id              String    @id @default(cuid())
+  stripeProductId String    @unique
+  name            String
+  description     String?   @db.Text
+  isActive        Boolean   @default(true)
+  metadata        Json?
+  images          Json? 
+  stripeCreatedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
   // Relations
-  prices            Price[]
+  prices Price[]
 
   @@index([stripeProductId])
   @@index([isActive])
@@ -144,26 +144,26 @@ model Product {
 }
 
 model Price {
-  id                String    @id @default(cuid())
-  stripePriceId     String    @unique
-  stripeProductId   String
-  product           Product   @relation(fields: [stripeProductId], references: [stripeProductId], onDelete: Cascade)
-  nickname          String?
-  currency          String    @default("usd")
-  unitAmount        Int?      // Amount in cents (null for tiered/custom)
-  recurringInterval String?   // day, week, month, year
-  recurringIntervalCount Int? @default(1)
-  type              String    // one_time, recurring
-  billingScheme     String    // per_unit, tiered
-  tiersMode         String?   // graduated, volume
-  tiers             Json?     // Pricing tiers for graduated/volume
-  trialPeriodDays   Int?
-  isActive          Boolean   @default(true)
-  metadata          Json?
-  stripeCreatedAt   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  id                     String    @id @default(cuid())
+  stripePriceId          String    @unique
+  stripeProductId        String
+  product                Product   @relation(fields: [stripeProductId], references: [stripeProductId], onDelete: Cascade)
+  nickname               String?
+  currency               String    @default("usd")
+  unitAmount             Int? 
+  recurringInterval      String? 
+  recurringIntervalCount Int?      @default(1)
+  type                   String 
+  billingScheme          String 
+  tiersMode              String? 
+  tiers                  Json? 
+  trialPeriodDays        Int?
+  isActive               Boolean   @default(true)
+  metadata               Json?
+  stripeCreatedAt        DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
   // Relations
   subscriptionItems SubscriptionItem[]
 
@@ -175,33 +175,33 @@ model Price {
 }
 
 model Subscription {
-  id                    String              @id @default(cuid())
-  stripeSubscriptionId  String              @unique
-  stripeCustomerId      String
-  customer              Customer            @relation(fields: [stripeCustomerId], references: [stripeCustomerId], onDelete: Cascade)
-  status                String              // active, canceled, incomplete, incomplete_expired, trialing, past_due, unpaid, paused
-  currentPeriodStart    DateTime
-  currentPeriodEnd      DateTime
-  canceledAt            DateTime?
-  cancelAtPeriodEnd     Boolean             @default(false)
-  cancelAt              DateTime?
-  endedAt               DateTime?
-  trialStart            DateTime?
-  trialEnd              DateTime?
-  billingCycleAnchor    DateTime?
-  collectionMethod      String              @default("charge_automatically") // charge_automatically, send_invoice
-  daysUntilDue          Int?
-  defaultPaymentMethod  String?
-  discount              Json?               // Applied discount/coupon
-  metadata              Json?
-  stripeCreatedAt       DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  
+  id                   String    @id @default(cuid())
+  stripeSubscriptionId String    @unique
+  stripeCustomerId     String
+  customer             Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId], onDelete: Cascade)
+  status               String // active, canceled, incomplete, incomplete_expired, trialing, past_due, unpaid, paused
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  canceledAt           DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  cancelAt             DateTime?
+  endedAt              DateTime?
+  trialStart           DateTime?
+  trialEnd             DateTime?
+  billingCycleAnchor   DateTime?
+  collectionMethod     String    @default("charge_automatically") 
+  daysUntilDue         Int?
+  defaultPaymentMethod String?
+  discount             Json? 
+  metadata             Json?
+  stripeCreatedAt      DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
   // Relations
-  items                 SubscriptionItem[]
-  invoices              Invoice[]
-  changes               SubscriptionChange[]
+  items    SubscriptionItem[]
+  invoices Invoice[]
+  changes  SubscriptionChange[]
 
   @@index([stripeSubscriptionId])
   @@index([stripeCustomerId])
@@ -212,17 +212,17 @@ model Subscription {
 }
 
 model SubscriptionItem {
-  id                    String       @id @default(cuid())
-  stripeItemId          String       @unique
-  stripeSubscriptionId  String
-  subscription          Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
-  stripePriceId         String
-  price                 Price        @relation(fields: [stripePriceId], references: [stripePriceId])
-  quantity              Int          @default(1)
-  metadata              Json?
-  stripeCreatedAt       DateTime?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  stripeItemId         String       @unique
+  stripeSubscriptionId String
+  subscription         Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
+  stripePriceId        String
+  price                Price        @relation(fields: [stripePriceId], references: [stripePriceId])
+  quantity             Int          @default(1)
+  metadata             Json?
+  stripeCreatedAt      DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   @@index([stripeItemId])
   @@index([stripeSubscriptionId])
@@ -231,40 +231,40 @@ model SubscriptionItem {
 }
 
 model Invoice {
-  id                    String    @id @default(cuid())
-  stripeInvoiceId       String    @unique
-  stripeCustomerId      String
-  customer              Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
-  stripeSubscriptionId  String?
-  subscription          Subscription? @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId])
-  number                String?   // Invoice number
-  status                String    // draft, open, paid, uncollectible, void
-  amountDue             Int       // Amount in cents
-  amountPaid            Int       // Amount in cents
-  amountRemaining       Int       // Amount in cents
-  subtotal              Int       // Amount in cents
-  total                 Int       // Amount in cents
-  tax                   Int?      // Tax amount in cents
-  currency              String
-  description           String?   @db.Text
-  hostedInvoiceUrl      String?   @db.Text
-  invoicePdf            String?   @db.Text
-  dueDate               DateTime?
-  paidAt                DateTime?
-  periodStart           DateTime?
-  periodEnd             DateTime?
-  attemptCount          Int       @default(0)
-  attempted             Boolean   @default(false)
-  autoAdvance           Boolean   @default(true)
-  billingReason         String?   // subscription_create, subscription_cycle, subscription_update, manual
-  metadata              Json?
-  stripeCreatedAt       DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  
+  id                   String        @id @default(cuid())
+  stripeInvoiceId      String        @unique
+  stripeCustomerId     String
+  customer             Customer      @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  stripeSubscriptionId String?
+  subscription         Subscription? @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId])
+  number               String? 
+  status               String 
+  amountDue            Int 
+  amountPaid           Int 
+  amountRemaining      Int 
+  subtotal             Int 
+  total                Int 
+  tax                  Int? 
+  currency             String
+  description          String?       @db.Text
+  hostedInvoiceUrl     String?       @db.Text
+  invoicePdf           String?       @db.Text
+  dueDate              DateTime?
+  paidAt               DateTime?
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  attemptCount         Int           @default(0)
+  attempted            Boolean       @default(false)
+  autoAdvance          Boolean       @default(true)
+  billingReason        String? 
+  metadata             Json?
+  stripeCreatedAt      DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
   // Relations
-  payments              Payment[]
-  refunds               Refund[]
+  payments Payment[]
+  refunds  Refund[]
 
   @@index([stripeInvoiceId])
   @@index([stripeCustomerId])
@@ -282,14 +282,14 @@ model Payment {
   invoice               Invoice?  @relation(fields: [stripeInvoiceId], references: [stripeInvoiceId])
   stripeCustomerId      String
   customer              Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
-  amount                Int       // Amount in cents
+  amount                Int 
   amountCapturable      Int       @default(0)
   amountReceived        Int       @default(0)
   currency              String
-  status                String    // requires_payment_method, requires_confirmation, requires_action, processing, requires_capture, canceled, succeeded
-  paymentMethod         String?   // card, bank_transfer, etc
-  paymentMethodBrand    String?   // visa, mastercard, amex
-  paymentMethodLast4    String?   // Last 4 digits
+  status                String 
+  paymentMethod         String? 
+  paymentMethodBrand    String? 
+  paymentMethodLast4    String? 
   description           String?   @db.Text
   receiptEmail          String?
   receiptUrl            String?   @db.Text
@@ -300,9 +300,9 @@ model Payment {
   stripeCreatedAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   // Relations
-  refunds               Refund[]
+  refunds Refund[]
 
   @@index([stripePaymentIntentId])
   @@index([stripeInvoiceId])
@@ -315,25 +315,25 @@ model Payment {
 }
 
 model Refund {
-  id                  String    @id @default(cuid())
-  stripeRefundId      String    @unique
+  id                    String    @id @default(cuid())
+  stripeRefundId        String    @unique
   stripePaymentIntentId String?
-  payment             Payment?  @relation(fields: [stripePaymentIntentId], references: [stripePaymentIntentId])
-  stripeInvoiceId     String?
-  invoice             Invoice?  @relation(fields: [stripeInvoiceId], references: [stripeInvoiceId])
-  stripeCustomerId    String
-  customer            Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
-  amount              Int       // Refund amount in cents
-  currency            String
-  reason              String?   // duplicate, fraudulent, requested_by_customer
-  status              String    // succeeded, failed, pending, canceled
-  failureReason       String?
-  receiptNumber       String?
-  metadata            Json?
-  refundedAt          DateTime?
-  stripeCreatedAt     DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  payment               Payment?  @relation(fields: [stripePaymentIntentId], references: [stripePaymentIntentId])
+  stripeInvoiceId       String?
+  invoice               Invoice?  @relation(fields: [stripeInvoiceId], references: [stripeInvoiceId])
+  stripeCustomerId      String
+  customer              Customer  @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  amount                Int 
+  currency              String
+  reason                String? 
+  status                String 
+  failureReason         String?
+  receiptNumber         String?
+  metadata              Json?
+  refundedAt            DateTime?
+  stripeCreatedAt       DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([stripeRefundId])
   @@index([stripeCustomerId])
@@ -345,26 +345,26 @@ model Refund {
 }
 
 model SubscriptionChange {
-  id                    String       @id @default(cuid())
-  stripeSubscriptionId  String
-  subscription          Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
-  stripeCustomerId      String
-  customer              Customer     @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
-  changeType            String       // created, updated, canceled, plan_changed, quantity_changed, trial_ended, reactivated
-  fromStatus            String?
-  toStatus              String?
-  fromPriceId           String?
-  toPriceId             String?
-  fromQuantity          Int?
-  toQuantity            Int?
-  fromAmount            Int?         // in cents
-  toAmount              Int?         // in cents
-  reason                String?      @db.Text
-  eventId               String?      // Reference to WebhookEvent
-  effectiveDate         DateTime
-  metadata              Json?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  stripeSubscriptionId String
+  subscription         Subscription @relation(fields: [stripeSubscriptionId], references: [stripeSubscriptionId], onDelete: Cascade)
+  stripeCustomerId     String
+  customer             Customer     @relation(fields: [stripeCustomerId], references: [stripeCustomerId])
+  changeType           String 
+  fromStatus           String?
+  toStatus             String?
+  fromPriceId          String?
+  toPriceId            String?
+  fromQuantity         Int?
+  toQuantity           Int?
+  fromAmount           Int? 
+  toAmount             Int? 
+  reason               String?      @db.Text
+  eventId              String? 
+  effectiveDate        DateTime
+  metadata             Json?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   @@index([stripeSubscriptionId])
   @@index([stripeCustomerId])
@@ -379,27 +379,27 @@ model SubscriptionChange {
 // ====================================================================================
 
 model RevenueSnapshot {
-  id                  String   @id @default(cuid())
-  date                DateTime @unique
-  period              String   // daily, weekly, monthly, yearly
-  totalRevenue        Int      @default(0) // in cents
-  totalRefunds        Int      @default(0) // in cents
-  netRevenue          Int      @default(0) // in cents
-  mrr                 Int      @default(0) // Monthly Recurring Revenue
-  arr                 Int      @default(0) // Annual Recurring Revenue
-  newCustomers        Int      @default(0)
-  churnedCustomers    Int      @default(0)
-  activeSubscriptions Int      @default(0)
-  trialingSubscriptions Int    @default(0)
-  newSubscriptions    Int      @default(0)
-  canceledSubscriptions Int    @default(0)
-  successfulPayments  Int      @default(0)
-  failedPayments      Int      @default(0)
-  refundCount         Int      @default(0)
-  currency            String   @default("usd")
-  metadata            Json?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  date                  DateTime @unique
+  period                String 
+  totalRevenue          Int      @default(0) 
+  totalRefunds          Int      @default(0) 
+  netRevenue            Int      @default(0) 
+  mrr                   Int      @default(0) 
+  arr                   Int      @default(0) 
+  newCustomers          Int      @default(0)
+  churnedCustomers      Int      @default(0)
+  activeSubscriptions   Int      @default(0)
+  trialingSubscriptions Int      @default(0)
+  newSubscriptions      Int      @default(0)
+  canceledSubscriptions Int      @default(0)
+  successfulPayments    Int      @default(0)
+  failedPayments        Int      @default(0)
+  refundCount           Int      @default(0)
+  currency              String   @default("usd")
+  metadata              Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@index([date])
   @@index([period])
@@ -441,24 +441,57 @@ model GA4Metric {
   @@map("ga4_metrics")
 }
 
+// Aggregated per-event daily totals (materialized from GA4 export if enabled)
+model GA4EventAggregate {
+  id        String   @id @default(cuid())
+  date      DateTime
+  eventName String
+  total     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, eventName])
+  @@index([date])
+  @@index([eventName])
+  @@map("ga4_event_aggregates")
+}
+
+// Aggregated event parameter values (top values per day/event/param)
+model GA4EventParamAggregate {
+  id         String   @id @default(cuid())
+  date       DateTime
+  eventName  String
+  paramKey   String
+  paramValue String?
+  total      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([date, eventName, paramKey, paramValue])
+  @@index([date])
+  @@index([eventName])
+  @@index([paramKey])
+  @@map("ga4_event_param_aggregates")
+}
+
 // ====================================================================================
 // SYSTEM & OPERATIONAL MODELS
 // ====================================================================================
 
 model WebhookEvent {
-  id              String   @id @default(cuid())
-  source          String   // stripe, paddle, etc
-  eventType       String   // customer.created, invoice.paid, etc
-  eventId         String?  // External event ID
-  payload         Json     // Full webhook payload
-  status          String   // received, processing, processed, failed
-  processedAt     DateTime?
-  error           String?  @db.Text
-  retryCount      Int      @default(0)
-  headers         Json?    // Request headers
-  ipAddress       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String    @id @default(cuid())
+  source      String 
+  eventType   String 
+  eventId     String? 
+  payload     Json 
+  status      String 
+  processedAt DateTime?
+  error       String?   @db.Text
+  retryCount  Int       @default(0)
+  headers     Json? 
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([source, eventId])
   @@index([source])
@@ -468,19 +501,36 @@ model WebhookEvent {
   @@map("webhook_events")
 }
 
+model ClientWebhookEvent {
+  id          String    @id @default(cuid())
+  eventId     String?
+  eventType   String?
+  timestamp   DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  tokenId     String?
+  userId      String?
+  action_Name String?
+  durationMs  Int? 
+  payload     Json?
+  receivedAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model SyncLog {
-  id            String   @id @default(cuid())
-  syncType      String   @unique // stripe_customers, stripe_products, stripe_invoices, ga4_metrics
+  id            String    @id @default(cuid())
+  syncType      String    @unique 
   lastSyncAt    DateTime
   nextSyncAt    DateTime?
-  status        String   // success, failed, in_progress
-  recordsSynced Int      @default(0)
-  recordsFailed Int      @default(0)
-  errorMessage  String?  @db.Text
-  duration      Int?     // Sync duration in milliseconds
+  status        String 
+  recordsSynced Int       @default(0)
+  recordsFailed Int       @default(0)
+  errorMessage  String?   @db.Text
+  duration      Int? 
   metadata      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([syncType])
   @@index([status])
@@ -489,18 +539,18 @@ model SyncLog {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action      String   // login, logout, create, update, delete, export
-  resource    String   // user, customer, subscription, invoice, etc
-  resourceId  String?
-  changes     Json?    // Before/after values
-  ipAddress   String?
-  userAgent   String?  @db.Text
-  status      String   @default("success") // success, failure
-  errorMessage String? @db.Text
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String 
+  resource     String 
+  resourceId   String?
+  changes      Json? 
+  ipAddress    String?
+  userAgent    String?  @db.Text
+  status       String   @default("success") 
+  errorMessage String?  @db.Text
+  createdAt    DateTime @default(now())
 
   @@index([userId])
   @@index([action])
@@ -511,18 +561,18 @@ model AuditLog {
 }
 
 model Notification {
-  id          String   @id @default(cuid())
-  type        String   // email, webhook, sms
-  recipient   String   // Email, URL, phone number
-  subject     String?
-  message     String   @db.Text
-  status      String   @default("pending") // pending, sent, failed
-  sentAt      DateTime?
-  error       String?  @db.Text
-  retryCount  Int      @default(0)
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  type       String 
+  recipient  String 
+  subject    String?
+  message    String    @db.Text
+  status     String    @default("pending") 
+  sentAt     DateTime?
+  error      String?   @db.Text
+  retryCount Int       @default(0)
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([type])
   @@index([status])

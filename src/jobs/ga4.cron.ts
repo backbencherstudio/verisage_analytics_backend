@@ -22,7 +22,11 @@ export const startGA4CronJob = () => {
 
   // Optional: Run initial sync on startup
   console.log('Running initial GA4 data sync...');
-  syncGA4Data().catch((error) => {
-    console.error('Error in initial GA4 sync:', error);
-  });
+  syncGA4Data()
+    .then(async () => {
+      // initial sync completed
+    })
+    .catch((error) => {
+      console.error('Error in initial GA4 sync:', error);
+    });
 };

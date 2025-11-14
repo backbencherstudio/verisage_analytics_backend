@@ -1,6 +1,3 @@
-// Subscription Analytics Service
-// Provides: churn rate, upgrade/downgrade tracking, trial conversion, plan distribution, avg duration, retention cohorts, cancellation reasons
-
 import { prisma } from '../../db/prisma';
 
 interface SubscriptionAnalytics {
@@ -170,9 +167,6 @@ export async function getSubscriptionAnalytics(dateRange?: { start?: Date; end?:
     ? durations.reduce((sum, d) => sum + d, 0) / durations.length
     : 0;
 
-  // Upgrade/Downgrade tracking (from metadata changes)
-  // This would typically require tracking subscription changes over time
-  // For now, we'll use a simplified approach based on metadata
   const subscriptionsWithHistory = await prisma.subscription.findMany({
     where: isRanged ? { updatedAt: { gte: start, lte: end } } : {},
     select: { metadata: true, updatedAt: true },
@@ -207,7 +201,7 @@ export async function getSubscriptionAnalytics(dateRange?: { start?: Date; end?:
 
   // Retention cohorts (by month)
   const cohorts = [];
-  const monthsToAnalyze = 6; // Last 6 months (static). Future: make range-aware if needed.
+  const monthsToAnalyze = 6; 
   
   for (let i = 0; i < monthsToAnalyze; i++) {
     const cohortStart = new Date();

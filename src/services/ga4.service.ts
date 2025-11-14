@@ -20,7 +20,6 @@ export const syncGA4Data = async () => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 30);
 
-    // Expanded metrics and dimensions
     const dimensions = [
       { name: 'date' },
       { name: 'country' },
@@ -138,7 +137,6 @@ export const syncGA4Data = async () => {
           })
         );
       }
-      // Batch upserts for efficiency
       const BATCH_SIZE = 50;
       for (let i = 0; i < upserts.length; i += BATCH_SIZE) {
         await Promise.all(upserts.slice(i, i + BATCH_SIZE));
@@ -152,8 +150,240 @@ export const syncGA4Data = async () => {
 };
 
 /**
- * Get GA4 metrics from database with comprehensive aggregation
+ * List top events using the Analytics Data API (eventName + eventCount)
  */
+export const listTopEvents = async (days = 30, limit = 200) => {
+  const propertyId = config.ga4.propertyId;
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  try {
+    const [response] = await analyticsDataClient.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [
+        {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        },
+      ],
+      dimensions: [{ name: 'eventName' }],
+      metrics: [{ name: 'eventCount' }],
+      limit: limit,
+    });
+
+    const rows = (response.rows || []).map((r: any) => {
+      const eventName = r.dimensionValues?.[0]?.value || '';
+      const total = parseInt(r.metricValues?.[0]?.value || '0', 10);
+      return { eventName, total };
+    });
+    return rows;
+  } catch (err) {
+    console.error('Error listing top events from GA4 Data API:', err);
+    throw err;
+  }
+};
+
+
+export const sampleEventParams = async (eventName: string, paramKey: string, days = 30, limit = 100) => {
+  if (!paramKey) throw new Error('paramKey is required');
+  const propertyId = config.ga4.propertyId;
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const paramDimension = `eventParam:${paramKey}`;
+
+  try {
+    const [response] = await analyticsDataClient.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [
+        {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        },
+      ],
+      dimensions: [{ name: 'eventName' }, { name: paramDimension }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: {
+        andGroup: {
+          expressions: [
+            {
+              filter: {
+                fieldName: 'eventName',
+                stringFilter: { matchType: 'EXACT', value: eventName },
+              },
+            },
+          ],
+        },
+      },
+      limit: limit,
+    } as any);
+
+    const rows = (response.rows || []).map((r: any) => {
+      const paramValue = r.dimensionValues?.[1]?.value || null;
+      const total = parseInt(r.metricValues?.[0]?.value || '0', 10);
+      return { paramValue, total };
+    });
+    return rows;
+  } catch (err: any) {
+    const message = err?.message || String(err);
+    console.error('Error sampling event params from GA4 Data API:', message);
+    throw new Error(
+      `Unable to sample event params via Analytics Data API. The Data API may not expose raw params for this property. Error: ${message}`
+    );
+  }
+};
+
+
+export const discoverEventParams = async (
+  eventName: string,
+  candidates: string[] = ['token_id', 'video_id', 'video_percent', 'video_progress', 'value', 'label', 'category', 'media_type'],
+  days = 30,
+  sampleLimit = 10
+) => {
+  const results: Array<{ paramKey: string; total: number; sampleValues: Array<string | null> }> = [];
+  for (const key of candidates) {
+    try {
+      const rows = await sampleEventParams(eventName, key, days, sampleLimit);
+      if (rows && rows.length > 0) {
+        const sampleValues = rows.map((r: any) => r.paramValue ?? null).slice(0, sampleLimit);
+        const total = rows.reduce((s: number, r: any) => s + (typeof r.total === 'string' ? parseInt(r.total, 10) : r.total || 0), 0);
+        results.push({ paramKey: key, total, sampleValues });
+      }
+    } catch (err) {
+      continue;
+    }
+  }
+
+  return results;
+};
+
+
+export const listEventDetails = async (days = 30, limitEvents = 500, limitBreakdown = 10) => {
+  const propertyId = config.ga4.propertyId;
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  try {
+    const [response] = await analyticsDataClient.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [
+        {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        },
+      ],
+      dimensions: [{ name: 'eventName' }, { name: 'country' }, { name: 'deviceCategory' }],
+      metrics: [{ name: 'eventCount' }],
+      limit: 100000, 
+    } as any);
+
+    const map: Record<string, any> = {};
+    const rows = response.rows || [];
+    for (const r of rows) {
+      const eventName = r.dimensionValues?.[0]?.value || '(unknown)';
+      const country = r.dimensionValues?.[1]?.value || 'unknown';
+      const device = r.dimensionValues?.[2]?.value || 'unknown';
+      const count = parseInt(r.metricValues?.[0]?.value || '0', 10);
+
+      if (!map[eventName]) map[eventName] = { eventName, total: 0, byCountry: {}, byDevice: {} };
+      map[eventName].total += count;
+      map[eventName].byCountry[country] = (map[eventName].byCountry[country] || 0) + count;
+      map[eventName].byDevice[device] = (map[eventName].byDevice[device] || 0) + count;
+    }
+
+    // Convert map to array and sort by total
+    const results = Object.values(map)
+      .map((e: any) => {
+        const byCountry = Object.entries(e.byCountry)
+          .map(([k, v]) => ({ country: k, total: v }))
+          .sort((a: any, b: any) => (b.total as number) - (a.total as number))
+          .slice(0, limitBreakdown);
+
+        const byDevice = Object.entries(e.byDevice)
+          .map(([k, v]) => ({ device: k, total: v }))
+          .sort((a: any, b: any) => (b.total as number) - (a.total as number))
+          .slice(0, limitBreakdown);
+
+        return { eventName: e.eventName, total: e.total, byCountry, byDevice };
+      })
+      .sort((a: any, b: any) => (b.total as number) - (a.total as number))
+      .slice(0, limitEvents);
+
+    return results;
+  } catch (err) {
+    console.error('Error listing event details from GA4 Data API:', err);
+    throw err;
+  }
+};
+
+
+export const getEventDetail = async (
+  eventName: string,
+  days = 30,
+  limitBreakdown = 20
+) => {
+  const propertyId = config.ga4.propertyId;
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const result: any = { eventName, total: 0, timeseries: [], byCountry: [], byDevice: [], byBrowser: [], byCity: [], params: null };
+
+  try {
+    // 1) timeseries by date
+    const [tsResp] = await analyticsDataClient.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [{ startDate: startDate.toISOString().split('T')[0], endDate: endDate.toISOString().split('T')[0] }],
+      dimensions: [{ name: 'date' }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { matchType: 'EXACT', value: eventName } } },
+      limit: 10000,
+    } as any);
+
+    if (tsResp.rows) {
+      result.timeseries = tsResp.rows.map((r: any) => ({ date: r.dimensionValues?.[0]?.value, total: parseInt(r.metricValues?.[0]?.value || '0', 10) }));
+      result.total = result.timeseries.reduce((s: number, r: any) => s + (r.total || 0), 0);
+    }
+
+    // Helper to fetch breakdowns
+    async function fetchBreakdown(dimensionName: string) {
+      const [resp] = await analyticsDataClient.runReport({
+        property: `properties/${propertyId}`,
+        dateRanges: [{ startDate: startDate.toISOString().split('T')[0], endDate: endDate.toISOString().split('T')[0] }],
+        dimensions: [{ name: dimensionName }],
+        metrics: [{ name: 'eventCount' }],
+        dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { matchType: 'EXACT', value: eventName } } },
+        limit: 10000,
+      } as any);
+      const rows = resp.rows || [];
+      return rows.map((r: any) => ({ key: r.dimensionValues?.[0]?.value || 'unknown', total: parseInt(r.metricValues?.[0]?.value || '0', 10) })).sort((a: any, b: any) => b.total - a.total).slice(0, limitBreakdown);
+    }
+
+    const [byCountry, byDevice, byBrowser, byCity] = await Promise.all([
+      fetchBreakdown('country'),
+      fetchBreakdown('deviceCategory'),
+      fetchBreakdown('browser'),
+      fetchBreakdown('city'),
+    ]);
+
+    result.byCountry = byCountry;
+    result.byDevice = byDevice;
+    result.byBrowser = byBrowser;
+    result.byCity = byCity;
+
+    result.params = { supported: false, message: 'Use /events/:name/params?paramKey=your_param to sample specific parameter values via the Data API. For full raw params enable BigQuery export.' };
+
+    return result;
+  } catch (err) {
+    console.error('Error getting event detail from GA4 Data API:', err);
+    throw err;
+  }
+};
+
+
 export const getGA4Metrics = async (filter?: {
   startDate?: Date;
   endDate?: Date;
@@ -233,7 +463,7 @@ export const getGA4Metrics = async (filter?: {
       byCountry: Object.entries(byCountry)
         .map(([country, data]) => ({ country, ...data as any }))
         .sort((a, b) => b.activeUsers - a.activeUsers)
-        .slice(0, 10), // Top 10 countries
+        .slice(0, 10), 
       byDevice: Object.entries(byDevice)
         .map(([device, data]) => ({ device, ...data as any }))
         .sort((a, b) => b.activeUsers - a.activeUsers),
